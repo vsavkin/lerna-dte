@@ -8,15 +8,15 @@ on:
 
 jobs:
   main:
-    name: Nx Cloud - Main Job
+    name: Main Job
     uses: nrwl/ci/.github/workflows/nx-cloud-main.yml@v0.4
     with:
-      init-commands: |
+      parallel-commands-on-agents: |
+        npx lerna run build
         npx lerna run test
-        npx lerna run build --concurrency=1
 
   agents:
-    name: Nx Cloud - Agents
+    name: Cloud - Agents
     uses: nrwl/ci/.github/workflows/nx-cloud-agents.yml@v0.4
     with:
-      number-of-agents: 3
+      number-of-agents: 30

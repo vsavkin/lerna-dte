@@ -1,95 +1,213 @@
-# Benchmarking Nx, Turbo, and Lerna
+# Lerna Distributed Task Execution (DTE) Example/Benchmark
 
-Recording:
+#### On how to make your CI 23 times faster with a small config change
 
-![nx-turbo-recording](./readme-assets/turbo-nx-perf.gif)
+New versions of Lerna can use Nx (powerful build system) to execute tasks. This means that Lerna now supports
+configuration-free distributed task execution (via Nx and Nx Cloud)--you can execute any `lerna run` command across as
+many machines while preserving the dev ergonomics of running it on a single machine.
 
-Repo contains:
+This repo illustrates how this works, and what performance benefits you get from it.
 
-1. 5 shared buildable packages/libraries with 250 components each
-2. 5 Next.js applications built out of 20 app-specific libraries. Each app-specific lib has 250 components each. Each
-   library uses the shared components.
+> Since Lerna uses Nx to run tasks, in the context of running tasks, the words "Lerna" and "Nx" are interchangeable. If
+> I say Lerna can do something, it means Nx can do it, and vise versa.
 
-Combined there are about 26k components. It's a lot of components, but they are very small. This corresponds to a medium
-size enterprise repo. A lot of our clients have repos that are 10x bigger than this, so this repo isn't something out or
-ordinary. And, the bigger the repo, the bigger the difference in performance between Nx and Turbo.
+## Repo Contains
 
-The repo has Nx, Turbo, Lerna and Lage enabled. They don't affect each other. You can remove one without affecting the
-other one.
+* 5 shared buildable packages/libraries with 250 components each
+* 5 Next.js applications built out of 20 app-specific libraries. Each app-specific lib has 250 components each. Each
+  library uses the shared components.
 
-## Benchmark & Results (UPDATED May 24, 2022)
+## Results
 
-Run `npm run benchmark`. The benchmark will warm the cache of all the tools. We benchmark how quickly
-Turbo/Nx/Lage/Lerna can figure out what needs to be restored from the cache and restores it.
+![results](readme-resources/results.png)
 
-These are the numbers using the latest MBP machine (May 24 version):
+Running all the builds and tests in this repo on 1 machine takes about ~6h 30m, which is obviously unusable, so
+to make such a repo work, you have to distribute.
 
-* average lage time is: 10257.4
-* average turbo time is: 1495.2
-* average lerna (powered by nx) time is: 288.1
-* average nx time is: 253.9
-* nx is 40.39936983064198x faster than lage
-* nx is 5.8889326506498625x faster than turbo
-* nx is 1.1346987002756992x faster than lerna (powered by nx)
+This repo enables Distributed Task Execution using Nx Cloud, which means that `lerna run` commands would run on multiple
+agents. It doesn't require us to change how our CI configuration is written or how our commands are executed. Enabling
+DTE and setting the number of agents is a small config change.
 
-### Why is Nx faster than Turbo
+> Nx Cloud is free for all OSS projects and for most closed-source projects
 
-Nx is in many ways akin to React in that it's doing tree diffing when restoring files from the cache. If the right files
-are in the right place, Nx won't touch them. Turbo blows everything away every time. Nx's version isn't just faster,
-it's also more useful (again similarly to tree diffing in React). Blowing everything away on every restoration means
-that if any tools watch the folders (which is common when you build large apps or build microfrontends), they are going
-to get confused or triggered for no reason. This is similar to how recreating the DOM from scratch isn't just slower,
-but results in worse UX.
+The repo shows what happens when we use a different number of agents per CI run. It's 8.7 times faster with 10 agents,
+and 23 times faster with 30 agents. You can allocate even more agents and reduce the CI time to about 7 minutes.
 
-If you remove the folders before every invocation (Nx will have to recreate all the folders the same way, so its
-smartness doesn't help it), Nx is still 1.6 times faster than Turbo. So depending on the state of your repo invoking Nx
-will be from 1.6 times to 5.8 times faster than invoking Turbo (on a mac).
+Note the dev ergonomics remained the same:
 
-Is Nx always faster? No. Nx uses Node.js, so it takes about 70ms (on a mac) to boot, regardless of what you do. You
-build 1000 projects, takes 70ms. You build 1 project, it takes 70ms. If you have a repo with say 10 files in it, running
-Turbo will likely be faster because it boots faster.
+* All build artifacts end up on the main agent
+* All logs are in one place
+* **The dev ergonomics of using 30 agents is exactly the same as using a single agent.**
+* Changing the number of agents is a 1-line PR.
 
-Yarn, npm, pnpm have a similar boot time to Nx, and folks don't mind. And, of course, it's worth asking whether a
-high-performance build tool is even required for a repo with 10 files in it.
+### Intelligent Distribution
 
-### Does this performance difference matter in practice?
+Nx Cloud (used by Lerna here) knows what commands your CI is running. It also knows how many agents you typically use,
+and how long each task in your workspace typically takes. Nx Cloud uses this information to create an execution
+plan. For instance, it knows that tests do not depend on each other, whereas we need to build the shared libraries
+first. Nx knows that the theoretical limit of how fast your CI can get
+is `slowest build of shared lib + slowest build of app`, so it will prioritize building shared libs to unblock the apps.
 
-The cache restoration Turborepo provides is likely to be fast enough for a lot of small and mid-size repos.
-What matters more is the ability to distribute any command across say 50 machines while
-preserving the dev ergonomics of running it on a single machine. Nx can do it. Bazel can do it (which Nx
-borrows some
-ideas from). Turbo can't. This is where the perf gains are for larger repos.
-See [this benchmark](https://github.com/vsavkin/interstellar) to learn more.
+This results in a somewhat even utilisation:
+<br>
+<img src="readme-resources/utilisation.png" alt='utilisation' width="600">
+<br>
 
-## Dev ergonomics & Staying out of your way
+After you run your CI a couple of times, Nx Cloud (used by Lerna) will learn stats about your workspace, and your CI
+will be more or less as fast as it can be given the provided agents. If you change the number of agents, it will
+rebalance the work. As you keep changing your repo, Nx Cloud will keep its understanding of it up to date and will keep
+your CI fast.
 
-When some folks compare Nx and Turborepo, they say something like "Nx may do all of those things well, and may be
-faster, but Turbo is built to stay out of you way". Let's talk about staying out of your way:
+**This all happens without you having to do anything.**
 
-Run `nx build crew --skip-nx-cache` and `turbo run build --scope=crew --force`:
+### What About Remote Caching?
 
-![terminal outputs](./readme-assets/turbo-nx-terminal.gif)
+Lerna supports remote computation caching, but it doesn't help this particular case. Remote caching ONLY helps with the
+average case, where some tasks are cached and some are not. In the worst case scenario nothing is cached. The only way
+to make the worst case scenario fast is to distribute. **And you have to distribute.** If you average CI time is 10
+mins, but your worst case CI time (which say happens every couple of days) is 6 hours, it is still unusable.
 
-Nx doesn't change your terminal output. Spinners, animations, colors are the same whether you use Nx or not (we
-instrument Node.js to get this result). What is also important is that when you restore things from cache, Nx will
-replay the terminal output identical to the one you would have had you run the command.
+## Understanding Two Approaches to Distribution
 
-Examine Turbo's output: no spinners, no animations, no colors. Pretty much anything you run with Turbo looks different (
-and a lot worse, to be honest) from running the same command without Turbo.
+**Non-trivial repos always use more than one agent in CI to verify PRs. The bigger the repo is, the more agents you
+use (our clients’ biggest repos use 100+ agents for every CI run).**
 
-A lot of Nx users don't even know they use Nx, or even what Nx is. Things they run look the same, they just got faster.
+There are two ways to distribute work across agents: **Sharding/Binning** and **Distributed Task Execution**
 
-## Lerna and Nx
+### Approach 1: Sharding/Binning
 
-Lerna 5.1 adds the ability to use Nx for task orchestration and computation caching (in addition to `p-map` and `p-queue`, which it had before).
-Given that Lerna uses Nx to run tasks, unsurprisingly, the numbers for
-Lerna and Nx are very similar--it's the same powerful task orchestrator under the hood. This also means that Lerna supports
-distributed tasks execution (see above) and that it captures terminal output correctly.
+Binning is an approach to distribution where the planning job divides the work into equally-weighted bins, one for each
+worker job. Then every worker executes the work prepared for it. After that the post-verification job runs. This
+requires you to completely change your CI setup.
 
-## Found an issue? Send a PR.
+### Approach 2: Distributed Task Execution
 
-If you find any issue with the repo, with the benchmark or the setup, please send a PR. The intention isn't to cherry
-pick some example where Turbo doesn't do well because of some weird edge case. If it happens that the repo surfaces some
-edge case with how turbo works, send a PR, and let's fix it. We tried to select the setup that Turbo should handle
-well (e.g., Next.js apps). The repo doesn't use any incrementality which Nx is very good at. We did our best to make it
-fair.
+Distributed Task Execution is an approach where any command can be distributed and run on N machines instead of a single
+machine without changing the dev ergonomics or other assumptions about that command. This doesn't require you to change
+your CI setup.
+
+<br>
+<img src="readme-resources/dte.png" alt='diagram showing dte' width="600">
+<br>
+
+Sharding/binning works for smaller repos (up to 10 agents), but even at that scale it has a lot of problems:
+
+- Agent utilization is uneven, so the CI is slower. And it requires manual rebalancing of tasks between agents.
+- Bad dev ergonomics (e.g., 10 different logs with potential failures).
+- It doesn't work for builds.
+
+### Sharding Doesn't Work for Builds?
+
+The CI has to build shared libraries first because Next.js applications consume those libraries
+from "dist".
+
+![build deps](readme-resources/build-deps.png)
+
+You cannot shard non-flat graphs, so you would have to rebuild shared libraries on all agents (which would make your CI
+much slower). If most of your libraries are buildable, it won’t work at all.
+
+[Read more about binning/sharding and
+DTE](https://blog.nrwl.io/distributing-ci-binning-and-distributed-task-execution-632fe31a8953).
+
+### Could We Use Binning/Sharding?
+
+If we were to change the repo to use binning/sharding, we would end up with:
+
+* 500-line complex CI config
+* Uneven utilization (so the CI time would be slower given the same number of agents)
+* Bad DX (we would see 30 different commands instead of 4 we logically have). Even with 30 agents, the sharding setup is
+  not really usable.
+
+## Why No Other Build System Uses DTE?
+
+Given everything mentioned, using distributed task execution is clearly much better. So why only Lerna and Nx support
+it, whereas so many tools support remote caching?
+
+Remote caching is relatively easy to build (took me about 3 days to get the first working version up and running), and
+distributed task execution is hard (took us about a year), but the payoff is huge.
+
+And there are several build systems supporting DTE. For instance, Bazel and Buck support DTE. They are used at Google
+and Facebook and some form of DTE is the only way to scale large repo. I have a lot of respect for the teams working on
+them but, if I’m honest, they don’t work well for the JS ecosystem.
+
+To be honest, a lot of Nx (and Lerna) work is taking cool ideas developed by those talented teams and making them super
+easy to use.
+
+## Enabling DTE
+
+In the current setup any lerna run command is distributable using Nx Cloud. It doesn't matter whether you build, test or
+lint, whether you use GitHub Actions or Jenkins. It works everywhere.
+
+The easiest way to enable it is by using the GitHub Actions workflow (this is what this repo does).
+
+```yaml
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  main:
+    name: Main Job
+    uses: nrwl/ci/.github/workflows/nx-cloud-main.yml@v0.4
+    with:
+      parallel-commands-on-agents: |
+        npx lerna run test
+        npx lerna run build
+
+  agents:
+    name: Cloud - Agents
+    uses: nrwl/ci/.github/workflows/nx-cloud-agents.yml@v0.4
+    with:
+      number-of-agents: 30
+```
+
+But the workflow is just syntactic sugar which can be extended into something like this:
+
+```yaml
+name: LargeRepo
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+env:
+  NX_CLOUD_DISTRIBUTED_EXECUTION: 'true'
+
+jobs:
+  agents:
+    name: Nx Cloud Agents
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      matrix:
+        agent: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-node@v1
+      - run: npm install
+      - name: Start Nx Agent ${{ matrix.agent }}
+        run: npx nx-cloud start-agent
+
+  main:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-node@v1
+      - run: npm install
+      - name: Run verification
+        uses: JamesHenry/parallel-bash-commands@v0.1
+        with:
+          cmd1: npx lerna run test
+          cmd2: npx lerna run build
+      - run: npx nx-cloud stop-all-agents
+```
+
+You can find all the examples of setting it up [here](https://nx.dev/using-nx/ci-overview). There are guides for all
+major CI providers. Simply replace any "nx affected" command with "lerna run"--the rest will work the same way.
+
