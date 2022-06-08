@@ -12,10 +12,11 @@ jobs:
     uses: nrwl/ci/.github/workflows/nx-cloud-main.yml@v0.4
     with:
       parallel-commands-on-agents: |
-        npx lerna run test --concurrency=1
+        npx lerna run build --concurrency=1 --skip-nx-cache
+        npx lerna run test --concurrency=1 --skip-nx-cache
 
   agents:
     name: Cloud - Agents
     uses: nrwl/ci/.github/workflows/nx-cloud-agents.yml@v0.4
     with:
-      number-of-agents: 1
+      number-of-agents: 5
