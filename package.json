@@ -1,6 +1,6 @@
 {
-  "name": "large-monorepo",
-  "version": "1.0.0",
+  "name": "lernadte",
+  "version": "1.0.7",
   "private": true,
   "workspaces": [
     "apps/*",

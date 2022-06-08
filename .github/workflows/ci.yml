@@ -6,16 +6,21 @@ on:
       - main
   pull_request:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   main:
     name: Main Job
     uses: nrwl/ci/.github/workflows/nx-cloud-main.yml@v0.4
     with:
       parallel-commands-on-agents: |
-        npx lerna run test --concurrency=1 --skip-nx-cache
+        NX_CLOUD_DISTRIBUTED_EXECUTION_AGENT_COUNT=10 npx lerna run test --concurrency=1
+        NX_CLOUD_DISTRIBUTED_EXECUTION_AGENT_COUNT=10 npx lerna run build --concurrency=1
 
   agents:
     name: Cloud - Agents
     uses: nrwl/ci/.github/workflows/nx-cloud-agents.yml@v0.4
     with:
-      number-of-agents: 1
+      number-of-agents: 10
