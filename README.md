@@ -52,7 +52,7 @@ is `slowest build of shared lib + slowest build of app`, so it will prioritize b
 
 This results in a somewhat even utilisation:
 <br>
-<img src="readme-resources/utilisation.png" alt='utilisation' width="600">
+<img src="readme-resources/utilization.png" alt='utilisation' width="600">
 <br>
 
 After you run your CI a couple of times, Nx Cloud (used by Lerna) will learn stats about your workspace, and your CI
