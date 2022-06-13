@@ -2,6 +2,8 @@
 
 #### On how to make your CI 23 times faster with a small config change
 
+![Workflow](readme-resources/lerna-dte.gif)
+
 New versions of Lerna can use Nx (powerful build system) to execute tasks. This means that Lerna now supports
 configuration-free distributed task execution (via Nx and Nx Cloud)--you can execute any `lerna run` command across as
 many machines while preserving the dev ergonomics of running it on a single machine.
